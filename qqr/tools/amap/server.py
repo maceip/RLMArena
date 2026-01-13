@@ -125,7 +125,9 @@ async def around_search(
     return truncate_text(json2md(pois))
 
 
-async def driving_direction(origin: str, destination: str, waypoints: str = ""):
+async def driving_direction(
+    origin: str, destination: str, waypoints: str | None = None
+):
     url = "https://restapi.amap.com/v5/direction/driving?parameters"
     params = {"key": AMAP_MAPS_API_KEY, "origin": origin, "destination": destination}
 
