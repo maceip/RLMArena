@@ -33,7 +33,7 @@ def mcp_server_config_fn() -> list[MCPServer]:
         blocklist=[],
         cache_ttl=600,
         cache_maxsize=8192,
-        concurrency_limit=16,
+        concurrency_limit=1,
     )
 
     return [web_search_server]

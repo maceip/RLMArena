@@ -55,7 +55,7 @@ def mcp_server_config_fn() -> list[MCPServer]:
         blocklist=[],
         cache_ttl=600,
         cache_maxsize=8192,
-        concurrency_limit=16,
+        concurrency_limit=4,
     )
 
     web_search_server_params = MCPServerStdioParams(
@@ -72,7 +72,7 @@ def mcp_server_config_fn() -> list[MCPServer]:
         blocklist=[],
         cache_ttl=600,
         cache_maxsize=8192,
-        concurrency_limit=16,
+        concurrency_limit=1,
     )
 
     return [amap_server, transport_server, web_search_server]
