@@ -21,7 +21,7 @@
 
 ## 📦 安装
 
-开始之前，请确保已安装 [`slime`](https://github.com/THUDM/slime)（参考 [快速开始](https://thudm.github.io/slime/get_started/quick_start.html)）。然后通过源码安装 `qqr`：
+开始之前，请确保已安装 [`slime`](https://github.com/THUDM/slime)（参考 [快速使用](https://thudm.github.io/slime/zh/get_started/quick_start.html)）。然后通过源码安装 `qqr`：
 
 ```bash
 git clone https://github.com/Alibaba-NLP/qqr.git
