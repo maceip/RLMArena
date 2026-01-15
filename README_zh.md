@@ -2,7 +2,7 @@
 
 <h4 align="center">
     <p>
-        <a href="README.md">English</a> |
+        <a href="README.md">English</a>&nbsp; | &nbsp;
         <b>中文</b>
     </p>
 </h4>
@@ -12,7 +12,10 @@
 <p>
 
 <p align="center">
-    🤗 <a href="https://huggingface.co/collections/Alibaba-NLP/arenarl">HuggingFace</a>&nbsp&nbsp | &nbsp&nbsp🤖 <a href="https://modelscope.cn/datasets/iic/Open-Travel">ModelScope</a>&nbsp&nbsp | &nbsp&nbsp📰 <a href="https://tongyi-agent.github.io/zh/blog/arenarl/">Blog</a>&nbsp&nbsp | &nbsp&nbsp📑 <a href="https://huggingface.co/papers/2601.06487">Paper</a>
+    🤗 <a href="https://huggingface.co/collections/Alibaba-NLP/arenarl">HuggingFace</a>&nbsp; | &nbsp;
+    🤖 <a href="https://modelscope.cn/datasets/iic/Open-Travel">ModelScope</a>&nbsp; | &nbsp;
+    📰 <a href="https://tongyi-agent.github.io/zh/blog/arenarl/">Blog</a>&nbsp; | &nbsp;
+    📑 <a href="https://huggingface.co/papers/2601.06487">Paper</a>
 <p>
 
 `qqr` 是一个轻量级、非侵入式的 [`slime`](https://github.com/THUDM/slime) 扩展库。集成了 [Model Context Protocol (MCP)](https://github.com/modelcontextprotocol)，通过 **ArenaRL** 算法实现开放域智能体的进化。
