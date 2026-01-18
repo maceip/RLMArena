@@ -6,6 +6,31 @@ This document describes the service accounts, environment variables, and secrets
 
 All services communicate over a Tailscale mesh network (tailnet) for secure, zero-trust networking. Each container runs a Tailscale client sidecar. High-throughput paths (SGLang <-> Gateway) use Docker compose networking for lower latency.
 
+### Shared Database Access
+
+**PostgreSQL** is the primary database for all services. It was chosen for:
+- Structured data storage (trajectories, certificates, training metadata)
+- Audit logging and policy versioning for leash/cedar/opa
+- Mature async drivers (asyncpg, sqlalchemy)
+- Simple connection-string based access
+
+All services receive `DATABASE_URL=postgresql://arena:PASSWORD@postgres:5432/arena` environment variable.
+
+| Service | Database Usage |
+|---------|---------------|
+| arena-service | Trajectories, comparisons, certificates |
+| vaas-gateway | API keys, rate limit state, request logs |
+| llama-factory | Training runs, DPO triplets, model metadata |
+| sglang-router | Model registry, serving metrics |
+| leash-enforcer | Policy audit logs, decision history |
+| opa-server | Policy bundles metadata, decision logs |
+| telemetry | Uses ClickHouse for high-volume analytics |
+
+**Redis** (`redis://redis:6379/0`) is used for:
+- Rate limiting (token bucket state)
+- Session caching
+- Pub/sub for real-time updates
+
 ```
 ┌─────────────────────────────────────────────────────────────────────────┐
 │                              Tailnet                                     │
