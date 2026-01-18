@@ -1,0 +1,3 @@
+"""
+Verification component tests.
+"""
