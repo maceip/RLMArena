@@ -1,5 +1,12 @@
+/**
+ * Arena Dashboard Layout
+ *
+ * Includes persistent sidebar navigation and public status bar with sparklines.
+ */
+
 import { component$, Slot } from "@builder.io/qwik";
 import { Link, useLocation } from "@builder.io/qwik-city";
+import { PublicStatusBar, StatusDot } from "~/components/xray";
 
 export default component$(() => {
   const loc = useLocation();
@@ -14,12 +21,17 @@ export default component$(() => {
 
   return (
     <>
-      <nav class="nav">
+      {/* Navigation with status indicator */}
+      <nav class="nav nav-dark">
         <div class="nav-inner">
-          <Link href="/" class="nav-logo">
+          <Link href="/" class="nav-logo" style={{ color: "var(--text-primary)" }}>
             RLM<span>Arena</span>
           </Link>
           <ul class="nav-links">
+            <li style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
+              <StatusDot status="ok" />
+              <span style={{ fontSize: "0.75rem", color: "var(--text-secondary)" }}>Live</span>
+            </li>
             <li><Link href="/">Home</Link></li>
             <li><Link href="/arena">Dashboard</Link></li>
             <li><a href="https://github.com/maceip/RLMArena">GitHub</a></li>
@@ -29,6 +41,11 @@ export default component$(() => {
 
       <div class="dashboard">
         <aside class="sidebar">
+          {/* Compact Status Bar */}
+          <div style={{ marginBottom: "1.5rem" }}>
+            <PublicStatusBar vertical />
+          </div>
+
           <div class="sidebar-section">
             <h4>Shadow Arena</h4>
             <Link href="/arena" class={`sidebar-link ${isActive("/arena/") || path === "/arena" ? "active" : ""}`}>
