@@ -1,0 +1,32 @@
+# Telemetry Collector - Audit logging and distributed tracing
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements-telemetry.txt /app/
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-telemetry.txt
+
+# Copy application code
+COPY qqr/serving/telemetry.py /app/telemetry.py
+COPY scripts/telemetry-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV TELEMETRY_HOST=0.0.0.0
+ENV TELEMETRY_PORT=8082
+ENV PYTHONPATH=/app
+
+VOLUME ["/var/lib/tailscale", "/var/log/telemetry"]
+
+EXPOSE 8082
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "uvicorn", "telemetry:app", "--host", "0.0.0.0", "--port", "8082"]

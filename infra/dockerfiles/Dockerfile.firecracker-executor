@@ -1,0 +1,58 @@
+# Firecracker Executor - Sandboxed code execution in microVMs
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
+    curl \
+    wget \
+    iptables \
+    iproute2 \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+# Download Firecracker binaries
+ARG FC_VERSION=1.5.1
+RUN curl -fsSL https://github.com/firecracker-microvm/firecracker/releases/download/v${FC_VERSION}/firecracker-v${FC_VERSION}-x86_64.tgz \
+    | tar -xz -C /usr/local/bin \
+    && mv /usr/local/bin/release-v${FC_VERSION}-x86_64/firecracker-v${FC_VERSION}-x86_64 /usr/local/bin/firecracker \
+    && mv /usr/local/bin/release-v${FC_VERSION}-x86_64/jailer-v${FC_VERSION}-x86_64 /usr/local/bin/jailer \
+    && chmod +x /usr/local/bin/firecracker /usr/local/bin/jailer \
+    && rm -rf /usr/local/bin/release-v${FC_VERSION}-x86_64
+
+WORKDIR /app
+
+# Install Python dependencies
+RUN pip install --no-cache-dir \
+    fastapi \
+    uvicorn \
+    httpx \
+    pydantic>=2.0
+
+# Copy application code
+COPY qqr/verification/plugins/runtime_verifier.py /app/runtime_verifier.py
+COPY scripts/firecracker-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create directories for VMs
+RUN mkdir -p /kernels /rootfs /srv/jailer /var/log/firecracker
+
+ENV FIRECRACKER_HOST=0.0.0.0
+ENV FIRECRACKER_PORT=8090
+ENV PYTHONPATH=/app
+
+VOLUME ["/kernels", "/rootfs", "/srv/jailer", "/var/lib/tailscale"]
+
+EXPOSE 8090
+
+# Requires privileged mode for KVM access
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "uvicorn", "runtime_verifier:app", "--host", "0.0.0.0", "--port", "8090"]

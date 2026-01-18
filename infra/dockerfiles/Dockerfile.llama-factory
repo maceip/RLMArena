@@ -1,0 +1,59 @@
+# LlamaFactory - Fine-tuning and distillation training
+FROM nvidia/cuda:12.1-devel-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3-pip \
+    git \
+    curl \
+    wget \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+WORKDIR /app
+
+# Clone LlamaFactory
+RUN git clone --depth 1 https://github.com/hiyouga/LLaMA-Factory.git /app/llama-factory
+
+WORKDIR /app/llama-factory
+
+# Install dependencies
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir -e ".[torch,metrics,deepspeed,bitsandbytes,vllm,gptq,awq,aqlm,qwen,modelscope,quality]"
+
+# Install additional dependencies for VaaS integration
+RUN pip install --no-cache-dir \
+    wandb \
+    boto3 \
+    httpx \
+    pydantic>=2.0
+
+# Copy VaaS training integration
+COPY qqr/verification/distillation.py /app/vaas/distillation.py
+COPY qqr/verification/training_store.py /app/vaas/training_store.py
+COPY scripts/training-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Model and checkpoint directories
+RUN mkdir -p /models/huggingface /models/cache /checkpoints
+
+ENV HF_HOME=/models/huggingface
+ENV MODEL_CACHE_DIR=/models/cache
+ENV PYTHONPATH=/app/llama-factory:/app/vaas
+
+VOLUME ["/models", "/checkpoints", "/var/lib/tailscale"]
+
+EXPOSE 7860
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "src/webui.py"]
