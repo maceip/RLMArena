@@ -10,6 +10,8 @@ from .plugins import (
     JSONSchemaPlugin,
     SafetyFilterPlugin,
     ToolCallValidatorPlugin,
+    TerraformVerifierPlugin,
+    InfraSandboxVerifierPlugin,
 )
 from .self_correction import (
     CorrectionContext,
@@ -17,6 +19,15 @@ from .self_correction import (
     inject_correction_into_messages,
 )
 from .shadow_arena import ShadowArena, ShadowArenaConfig, ShadowArenaResult
+from .early_termination import (
+    BranchTerminator,
+    EarlyTerminator,
+    TerminationConfig,
+    TerminationEvent,
+    TerminationReason,
+    TerminationStats,
+    run_with_early_termination,
+)
 
 __all__ = [
     "AggregateVerificationResult",
@@ -28,10 +39,19 @@ __all__ = [
     "JSONSchemaPlugin",
     "SafetyFilterPlugin",
     "ToolCallValidatorPlugin",
+    "TerraformVerifierPlugin",
+    "InfraSandboxVerifierPlugin",
     "CorrectionContext",
     "SelfCorrectionEngine",
     "inject_correction_into_messages",
     "ShadowArena",
     "ShadowArenaConfig",
     "ShadowArenaResult",
+    "BranchTerminator",
+    "EarlyTerminator",
+    "TerminationConfig",
+    "TerminationEvent",
+    "TerminationReason",
+    "TerminationStats",
+    "run_with_early_termination",
 ]
