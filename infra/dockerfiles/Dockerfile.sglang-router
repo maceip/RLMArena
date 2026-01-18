@@ -1,0 +1,52 @@
+# SGLang Router - High-performance model serving with RadixAttention
+FROM nvidia/cuda:12.1-runtime-ubuntu22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3.11-venv \
+    python3-pip \
+    git \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN update-alternatives --install /usr/bin/python3 python3 /usr/bin/python3.11 1 \
+    && update-alternatives --install /usr/bin/python python /usr/bin/python3.11 1
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+WORKDIR /app
+
+# Install sglang with all backends
+RUN pip install --no-cache-dir --upgrade pip setuptools wheel \
+    && pip install --no-cache-dir "sglang[all]>=0.2.0" \
+    && pip install --no-cache-dir flashinfer -i https://flashinfer.ai/whl/cu121/torch2.3/
+
+# Install additional dependencies
+RUN pip install --no-cache-dir \
+    prometheus-client \
+    httpx \
+    pydantic>=2.0
+
+# Copy entrypoint
+COPY scripts/sglang-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Directories
+RUN mkdir -p /models/served /cache/radix
+
+ENV SGLANG_HOST=0.0.0.0
+ENV SGLANG_PORT=30000
+
+VOLUME ["/models", "/cache", "/var/lib/tailscale"]
+
+EXPOSE 30000 9090
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "sglang.launch_server", \
+     "--model-path", "/models/served/current", \
+     "--host", "0.0.0.0", \
+     "--port", "30000"]
