@@ -1,0 +1,35 @@
+# VaaS Gateway - API gateway with rate limiting and request routing
+FROM python:3.11-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+WORKDIR /app
+
+# Install dependencies
+COPY requirements-gateway.txt /app/
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements-gateway.txt
+
+# Copy application code
+COPY qqr/verification/gateway.py /app/gateway.py
+COPY qqr/serving/router.py /app/router.py
+COPY qqr/serving/telemetry.py /app/telemetry.py
+COPY qqr/serving/costs.py /app/costs.py
+COPY scripts/gateway-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV GATEWAY_HOST=0.0.0.0
+ENV GATEWAY_PORT=8080
+ENV PYTHONPATH=/app
+
+VOLUME ["/var/lib/tailscale"]
+
+EXPOSE 8080
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["python", "-m", "uvicorn", "gateway:app", "--host", "0.0.0.0", "--port", "8080"]
