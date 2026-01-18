@@ -1,0 +1,52 @@
+# Leash Enforcer - Cedar-based network policy enforcement
+FROM rust:1.75-slim AS builder
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    pkg-config \
+    libssl-dev \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# Build Cedar policy engine wrapper
+RUN cargo install cedar-policy-cli
+
+# Copy and build leash service
+COPY leash/ /app/leash/
+WORKDIR /app/leash
+RUN cargo build --release
+
+# Production image
+FROM debian:bookworm-slim
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    ca-certificates \
+    curl \
+    libssl3 \
+    iptables \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+WORKDIR /app
+
+COPY --from=builder /app/leash/target/release/leash-enforcer /usr/local/bin/
+COPY --from=builder /usr/local/cargo/bin/cedar /usr/local/bin/
+COPY scripts/leash-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+# Create policy directory
+RUN mkdir -p /policies/cedar /var/log/leash
+
+ENV LEASH_HOST=0.0.0.0
+ENV LEASH_PORT=8091
+ENV CEDAR_POLICY_DIR=/policies/cedar
+
+VOLUME ["/policies", "/var/log/leash", "/var/lib/tailscale"]
+
+EXPOSE 8091
+
+# Requires NET_ADMIN for packet inspection
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["leash-enforcer", "--host", "0.0.0.0", "--port", "8091"]

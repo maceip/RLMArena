@@ -1,0 +1,31 @@
+# OPA Server - Rego policy evaluation for infrastructure compliance
+FROM openpolicyagent/opa:0.60.0-static AS opa
+
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    curl \
+    ca-certificates
+
+# Install tailscale for mesh networking
+RUN curl -fsSL https://tailscale.com/install.sh | sh
+
+COPY --from=opa /opa /usr/local/bin/opa
+
+WORKDIR /app
+
+# Copy default policies
+COPY policies/rego/ /policies/
+
+COPY scripts/opa-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV OPA_HOST=0.0.0.0
+ENV OPA_PORT=8181
+
+VOLUME ["/policies", "/var/lib/tailscale"]
+
+EXPOSE 8181
+
+ENTRYPOINT ["/entrypoint.sh"]
+CMD ["opa", "run", "--server", "--addr", "0.0.0.0:8181", "/policies"]

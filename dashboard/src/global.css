@@ -1,3 +1,8 @@
+/* Tailwind Base */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
 /* RLMArena - X-Ray Theme
  * Performance-first design system with aggressive typography
  * and speculative loading optimization
@@ -30,12 +35,7 @@
   --xray-pulse: rgba(99, 102, 241, 0.6);
 }
 
-@font-face {
-  font-family: 'Inter Variable';
-  src: url('https://rsms.me/inter/font-files/InterVariable.woff2') format('woff2');
-  font-weight: 100 900;
-  font-display: swap;
-}
+/* Fonts loaded via @fontsource-variable in root.tsx */
 
 * {
   box-sizing: border-box;

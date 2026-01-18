@@ -1,0 +1,19 @@
+# Tailscale sidecar container for secure mesh networking
+FROM alpine:3.19
+
+RUN apk add --no-cache \
+    tailscale \
+    iptables \
+    ip6tables \
+    iproute2 \
+    ca-certificates
+
+COPY scripts/tailscale-entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
+ENV TS_STATE_DIR=/var/lib/tailscale
+ENV TS_SOCKET=/var/run/tailscale/tailscaled.sock
+
+VOLUME ["/var/lib/tailscale"]
+
+ENTRYPOINT ["/entrypoint.sh"]

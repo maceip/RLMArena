@@ -1,0 +1,297 @@
+# VaaS Platform - Docker Compose with Tailscale Networking
+# All services communicate over tailnet except high-throughput paths (sglang <-> gateway)
+
+version: "3.9"
+
+x-tailscale-common: &tailscale-common
+  cap_add:
+    - NET_ADMIN
+    - NET_RAW
+  volumes:
+    - tailscale-state:/var/lib/tailscale
+  environment:
+    - TS_AUTHKEY=${TS_AUTHKEY}
+    - TS_EXTRA_ARGS=--accept-routes
+
+services:
+  # ===========================================
+  # Core ML Services
+  # ===========================================
+
+  llama-factory:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.llama-factory
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/llama-factory:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=llama-factory
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - HF_HOME=/models/huggingface
+      - MODEL_CACHE_DIR=/models/cache
+      - WANDB_API_KEY=${WANDB_API_KEY}
+      - WANDB_PROJECT=${WANDB_PROJECT:-vaas-training}
+      - AWS_ACCESS_KEY_ID=${CHECKPOINT_AWS_KEY}
+      - AWS_SECRET_ACCESS_KEY=${CHECKPOINT_AWS_SECRET}
+      - CHECKPOINT_BUCKET=${CHECKPOINT_BUCKET:-vaas-checkpoints}
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+    volumes:
+      - models:/models
+      - checkpoints:/checkpoints
+      - tailscale-state-factory:/var/lib/tailscale
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+    profiles:
+      - training
+
+  sglang-router:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.sglang-router
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/sglang-router:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=sglang-router
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - MODEL_PATH=/models/served/current
+      - SGLANG_TP_SIZE=${SGLANG_TP_SIZE:-4}
+      - SGLANG_MEM_FRACTION=${SGLANG_MEM_FRACTION:-0.9}
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+      - REDIS_URL=redis://redis:6379/0
+    volumes:
+      - models:/models:ro
+      - radix-cache:/cache/radix
+      - tailscale-state-sglang:/var/lib/tailscale
+    networks:
+      - high-throughput
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  # ===========================================
+  # VaaS Gateway & Arena
+  # ===========================================
+
+  vaas-gateway:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.vaas-gateway
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/vaas-gateway:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=vaas-gateway
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - GATEWAY_HOST=0.0.0.0
+      - GATEWAY_PORT=8080
+      - REDIS_URL=redis://redis:6379/0
+      - RATE_LIMIT_DEFAULT=${RATE_LIMIT_DEFAULT:-100/minute}
+      - JWT_SECRET=${JWT_SECRET}
+      - API_KEY_SALT=${API_KEY_SALT}
+      - SGLANG_ENDPOINT=http://sglang-router:30000
+      - ARENA_ENDPOINT=http://arena:8081
+      - TELEMETRY_ENDPOINT=http://telemetry:8082
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+    volumes:
+      - tailscale-state-gateway:/var/lib/tailscale
+    networks:
+      - high-throughput
+    ports:
+      - "${GATEWAY_PORT:-8080}:8080"
+    depends_on:
+      - redis
+      - postgres
+
+  arena-service:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.arena-service
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/arena-service:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=arena
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - ARENA_HOST=0.0.0.0
+      - ARENA_PORT=8081
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+      - FIRECRACKER_ENDPOINT=http://firecracker:8090
+      - LEASH_ENDPOINT=http://leash:8091
+      - OPA_ENDPOINT=http://opa:8181
+    volumes:
+      - tailscale-state-arena:/var/lib/tailscale
+    depends_on:
+      - postgres
+
+  # ===========================================
+  # Verification Services
+  # ===========================================
+
+  firecracker-executor:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.firecracker-executor
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/firecracker-executor:${VERSION:-latest}
+    <<: *tailscale-common
+    privileged: true
+    environment:
+      - TS_HOSTNAME=firecracker
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - VM_MEMORY_MB=${VM_MEMORY_MB:-512}
+      - VM_VCPU_COUNT=${VM_VCPU_COUNT:-2}
+      - VM_TIMEOUT_SECONDS=${VM_TIMEOUT_SECONDS:-30}
+    volumes:
+      - kernels:/kernels:ro
+      - rootfs:/rootfs:ro
+      - jailer:/srv/jailer
+      - tailscale-state-firecracker:/var/lib/tailscale
+    devices:
+      - /dev/kvm:/dev/kvm
+
+  leash-enforcer:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.leash-enforcer
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/leash-enforcer:${VERSION:-latest}
+    cap_add:
+      - NET_ADMIN
+      - NET_RAW
+    environment:
+      - TS_HOSTNAME=leash
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - CEDAR_POLICY_DIR=/policies/cedar
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+    volumes:
+      - ./policies/cedar:/policies/cedar:ro
+      - leash-logs:/var/log/leash
+      - tailscale-state-leash:/var/lib/tailscale
+
+  opa-server:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.opa-server
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/opa-server:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=opa
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - DATABASE_URL=postgresql://arena:${POSTGRES_PASSWORD}@postgres:5432/arena
+    volumes:
+      - ./policies/rego:/policies:ro
+      - tailscale-state-opa:/var/lib/tailscale
+
+  # ===========================================
+  # Observability
+  # ===========================================
+
+  telemetry-collector:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.telemetry-collector
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/telemetry-collector:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=telemetry
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - CLICKHOUSE_URL=clickhouse://telemetry:${CLICKHOUSE_PASSWORD}@clickhouse:9000/telemetry
+      - RETENTION_DAYS=${RETENTION_DAYS:-90}
+    volumes:
+      - telemetry-logs:/var/log/telemetry
+      - tailscale-state-telemetry:/var/lib/tailscale
+    depends_on:
+      - clickhouse
+
+  # ===========================================
+  # Web Dashboard
+  # ===========================================
+
+  dashboard-web:
+    build:
+      context: ..
+      dockerfile: infra/dockerfiles/Dockerfile.dashboard-web
+    image: ghcr.io/${GITHUB_REPOSITORY:-maceip/rlmarena}/dashboard-web:${VERSION:-latest}
+    <<: *tailscale-common
+    environment:
+      - TS_HOSTNAME=dashboard
+      - TS_AUTHKEY=${TS_AUTHKEY}
+      - API_ENDPOINT=http://vaas-gateway:8080
+      - OAUTH_CLIENT_ID=${OAUTH_CLIENT_ID}
+      - OAUTH_CLIENT_SECRET=${OAUTH_CLIENT_SECRET}
+      - OAUTH_ISSUER=${OAUTH_ISSUER}
+      - SESSION_SECRET=${SESSION_SECRET}
+      - SESSION_STORE_URL=redis://redis:6379/1
+    volumes:
+      - tailscale-state-dashboard:/var/lib/tailscale
+    ports:
+      - "${DASHBOARD_PORT:-3000}:3000"
+    depends_on:
+      - redis
+    profiles:
+      - dashboard
+
+  # ===========================================
+  # Supporting Services
+  # ===========================================
+
+  redis:
+    image: redis:7-alpine
+    command: redis-server --appendonly yes --requirepass ${REDIS_PASSWORD:-}
+    volumes:
+      - redis-data:/data
+
+  postgres:
+    image: postgres:16-alpine
+    environment:
+      - POSTGRES_USER=arena
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+      - POSTGRES_DB=arena
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24
+    environment:
+      - CLICKHOUSE_USER=telemetry
+      - CLICKHOUSE_PASSWORD=${CLICKHOUSE_PASSWORD}
+      - CLICKHOUSE_DB=telemetry
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+
+networks:
+  high-throughput:
+    driver: bridge
+    driver_opts:
+      com.docker.network.driver.mtu: 9000
+
+volumes:
+  # Tailscale state volumes (separate per service for isolation)
+  tailscale-state:
+  tailscale-state-factory:
+  tailscale-state-sglang:
+  tailscale-state-gateway:
+  tailscale-state-arena:
+  tailscale-state-firecracker:
+  tailscale-state-leash:
+  tailscale-state-opa:
+  tailscale-state-telemetry:
+  tailscale-state-dashboard:
+
+  # Data volumes
+  models:
+  checkpoints:
+  radix-cache:
+  kernels:
+  rootfs:
+  jailer:
+  redis-data:
+  postgres-data:
+  clickhouse-data:
+  telemetry-logs:
+  leash-logs:
