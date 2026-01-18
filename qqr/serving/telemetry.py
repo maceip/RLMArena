@@ -119,12 +119,13 @@ class TelemetryCollector:
         self.db_path = db_path
         self.retention_days = retention_days
         self.max_events = max_events
+        self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
         self._event_count = 0
 
     def _init_db(self) -> None:
         """Initialize database schema."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -152,10 +153,21 @@ class TelemetryCollector:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_events_type ON events(event_type)")
 
         conn.commit()
-        conn.close()
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def _get_conn(self) -> sqlite3.Connection:
+        """Get a database connection. For :memory: DBs, reuse connection."""
+        if self.db_path == ":memory:":
+            if self._conn is None:
+                self._conn = sqlite3.connect(":memory:")
+            return self._conn
         return sqlite3.connect(self.db_path)
+
+    def _close_conn(self, conn: sqlite3.Connection) -> None:
+        """Close connection if not an in-memory shared connection."""
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def record(self, event: TelemetryEvent) -> None:
         """Record a telemetry event."""
@@ -187,7 +199,7 @@ class TelemetryCollector:
         )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         self._event_count += 1
 
@@ -305,7 +317,7 @@ class TelemetryCollector:
         )
 
         events = [self._row_to_event(row) for row in cursor.fetchall()]
-        conn.close()
+        self._close_conn(conn)
 
         return events
 
@@ -320,7 +332,7 @@ class TelemetryCollector:
         )
 
         events = [self._row_to_event(row) for row in cursor.fetchall()]
-        conn.close()
+        self._close_conn(conn)
 
         return events
 
@@ -339,7 +351,7 @@ class TelemetryCollector:
         )
 
         events = [self._row_to_event(row) for row in cursor.fetchall()]
-        conn.close()
+        self._close_conn(conn)
 
         return events
 
@@ -372,7 +384,7 @@ class TelemetryCollector:
             )
 
         events = [self._row_to_event(row) for row in cursor.fetchall()]
-        conn.close()
+        self._close_conn(conn)
 
         return events
 
@@ -415,7 +427,7 @@ class TelemetryCollector:
         cursor.execute("SELECT COUNT(DISTINCT request_id) FROM events")
         unique_requests = cursor.fetchone()[0]
 
-        conn.close()
+        self._close_conn(conn)
 
         return {
             "total_events": total_events,
@@ -441,6 +453,6 @@ class TelemetryCollector:
 
         deleted = cursor.rowcount
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return deleted

@@ -81,11 +81,12 @@ class TrainingStore:
 
     def __init__(self, db_path: str = ":memory:"):
         self.db_path = db_path
+        self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -136,10 +137,21 @@ class TrainingStore:
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_triplets_confidence ON triplets(confidence)")
 
         conn.commit()
-        conn.close()
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def _get_conn(self) -> sqlite3.Connection:
+        """Get a database connection. For :memory: DBs, reuse connection."""
+        if self.db_path == ":memory:":
+            if self._conn is None:
+                self._conn = sqlite3.connect(":memory:")
+            return self._conn
         return sqlite3.connect(self.db_path)
+
+    def _close_conn(self, conn: sqlite3.Connection) -> None:
+        """Close connection if not an in-memory shared connection."""
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def add_triplet(
         self,
@@ -185,7 +197,7 @@ class TrainingStore:
         )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return triplet_id
 
@@ -229,7 +241,7 @@ class TrainingStore:
             )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return ids
 
@@ -240,7 +252,7 @@ class TrainingStore:
 
         cursor.execute("SELECT * FROM triplets WHERE id = ?", (triplet_id,))
         row = cursor.fetchone()
-        conn.close()
+        self._close_conn(conn)
 
         if not row:
             return None
@@ -298,7 +310,7 @@ class TrainingStore:
 
         cursor.execute(query, params)
         rows = cursor.fetchall()
-        conn.close()
+        self._close_conn(conn)
 
         return [self._row_to_triplet(row) for row in rows]
 
@@ -318,7 +330,7 @@ class TrainingStore:
 
         updated = cursor.rowcount > 0
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return updated
 
@@ -391,7 +403,7 @@ class TrainingStore:
             )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return DatasetVersion(
             version_id=version_id,
@@ -413,7 +425,7 @@ class TrainingStore:
             (version_id,)
         )
         row = cursor.fetchone()
-        conn.close()
+        self._close_conn(conn)
 
         if not row:
             return None
@@ -449,7 +461,7 @@ class TrainingStore:
         for row in cursor:
             yield self._row_to_triplet(row)
 
-        conn.close()
+        self._close_conn(conn)
 
     def export_version_jsonl(self, version_id: str) -> str:
         """Export a dataset version as JSONL."""
@@ -504,7 +516,7 @@ class TrainingStore:
         cursor.execute("SELECT AVG(confidence) FROM triplets WHERE status = 'active'")
         avg_confidence = cursor.fetchone()[0] or 0.0
 
-        conn.close()
+        self._close_conn(conn)
 
         return {
             "total_triplets": total_triplets,
@@ -537,5 +549,5 @@ class TrainingStore:
                 metadata=json.loads(row[7]) if row[7] else {},
             ))
 
-        conn.close()
+        self._close_conn(conn)
         return versions

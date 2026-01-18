@@ -233,11 +233,12 @@ class ExpertAlignerService:
     def __init__(self, db_path: Optional[str] = None):
         """Initialize the Expert Aligner Service with optional SQLite storage."""
         self.db_path = db_path or ":memory:"
+        self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
 
     def _init_db(self) -> None:
         """Initialize SQLite database schema."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -282,11 +283,22 @@ class ExpertAlignerService:
         """)
 
         conn.commit()
-        conn.close()
+        # Don't close in-memory connections
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def _get_conn(self) -> sqlite3.Connection:
-        """Get a database connection."""
+        """Get a database connection. For :memory: DBs, reuse connection."""
+        if self.db_path == ":memory:":
+            if self._conn is None:
+                self._conn = sqlite3.connect(":memory:")
+            return self._conn
         return sqlite3.connect(self.db_path)
+
+    def _close_conn(self, conn: sqlite3.Connection) -> None:
+        """Close connection if not an in-memory shared connection."""
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def create_gold_comparison(
         self,
@@ -328,7 +340,7 @@ class ExpertAlignerService:
         )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return comparison
 
@@ -394,7 +406,7 @@ class ExpertAlignerService:
         self._update_consensus(comparison_id, cursor)
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return label
 
@@ -437,7 +449,7 @@ class ExpertAlignerService:
         row = cursor.fetchone()
 
         if not row:
-            conn.close()
+            self._close_conn(conn)
             return None
 
         # Get labels
@@ -447,7 +459,7 @@ class ExpertAlignerService:
         )
         label_rows = cursor.fetchall()
 
-        conn.close()
+        self._close_conn(conn)
 
         labels = []
         for lrow in label_rows:
@@ -504,7 +516,7 @@ class ExpertAlignerService:
 
         cursor.execute(query, params)
         ids = [row[0] for row in cursor.fetchall()]
-        conn.close()
+        self._close_conn(conn)
 
         return [self.get_comparison(id) for id in ids if self.get_comparison(id)]
 
@@ -594,7 +606,7 @@ class ExpertAlignerService:
         cursor.execute("SELECT COUNT(DISTINCT sme_id) FROM sme_labels")
         unique_smes = cursor.fetchone()[0]
 
-        conn.close()
+        self._close_conn(conn)
 
         return {
             "total_comparisons": total_comparisons,

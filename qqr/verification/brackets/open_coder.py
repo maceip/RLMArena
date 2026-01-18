@@ -6,7 +6,7 @@ generated code executes correctly and passes security audits.
 """
 
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import datetime, timedelta
 from enum import Enum
 from typing import Any, Optional
 import asyncio
@@ -371,10 +371,11 @@ class OpenCoderBracket:
         tasks = []
 
         # Network policy check
+        async def _true(): return True
         if self._leash:
             tasks.append(self._check_network_policy(messages))
         else:
-            tasks.append(asyncio.coroutine(lambda: True)())
+            tasks.append(_true())
 
         # Security audit
         all_code = "\n".join(code for code, _ in code_blocks)
@@ -412,7 +413,7 @@ class OpenCoderBracket:
             security_audit=security_result,
             network_policy_check=network_passed,
             issued_at=now,
-            expires_at=now.replace(hour=now.hour + self._certificate_validity_hours) if status == CertificateStatus.VALID else None,
+            expires_at=now + timedelta(hours=self._certificate_validity_hours) if status == CertificateStatus.VALID else None,
             metadata={
                 "code_blocks_count": len(code_blocks),
                 "total_code_size": len(all_code),

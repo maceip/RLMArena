@@ -133,11 +133,12 @@ class CostTracker:
         self.db_path = db_path
         self.pricing = pricing or PricingConfig()
         self._quotas: dict[str, QuotaConfig] = {}
+        self._conn: Optional[sqlite3.Connection] = None
         self._init_db()
 
     def _init_db(self) -> None:
         """Initialize database schema."""
-        conn = sqlite3.connect(self.db_path)
+        conn = self._get_conn()
         cursor = conn.cursor()
 
         cursor.execute("""
@@ -165,10 +166,21 @@ class CostTracker:
         """)
 
         conn.commit()
-        conn.close()
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def _get_conn(self) -> sqlite3.Connection:
+        """Get a database connection. For :memory: DBs, reuse connection."""
+        if self.db_path == ":memory:":
+            if self._conn is None:
+                self._conn = sqlite3.connect(":memory:")
+            return self._conn
         return sqlite3.connect(self.db_path)
+
+    def _close_conn(self, conn: sqlite3.Connection) -> None:
+        """Close connection if not an in-memory shared connection."""
+        if self.db_path != ":memory:":
+            self._close_conn(conn)
 
     def set_quota(self, config: QuotaConfig) -> None:
         """Set quota configuration for a client."""
@@ -229,7 +241,7 @@ class CostTracker:
         )
 
         conn.commit()
-        conn.close()
+        self._close_conn(conn)
 
         return record
 
@@ -327,7 +339,7 @@ class CostTracker:
         request_count = cursor.fetchone()[0]
 
         if request_count >= quota.max_requests_per_day:
-            conn.close()
+            self._close_conn(conn)
             return False, f"Daily request limit ({quota.max_requests_per_day}) exceeded"
 
         # Check token count
@@ -346,7 +358,7 @@ class CostTracker:
         token_count = cursor.fetchone()[0] or 0
 
         if token_count >= quota.max_tokens_per_day:
-            conn.close()
+            self._close_conn(conn)
             return False, f"Daily token limit ({quota.max_tokens_per_day}) exceeded"
 
         # Check cost
@@ -359,7 +371,7 @@ class CostTracker:
         )
         total_cost = cursor.fetchone()[0] or 0.0
 
-        conn.close()
+        self._close_conn(conn)
 
         if total_cost >= quota.max_cost_per_day_usd:
             return False, f"Daily cost limit (${quota.max_cost_per_day_usd}) exceeded"
@@ -413,7 +425,7 @@ class CostTracker:
             elif usage_type == UsageType.VERIFICATION.value:
                 total_verifications = int(quantity)
 
-        conn.close()
+        self._close_conn(conn)
 
         return UsageSummary(
             client_id=client_id,
@@ -495,7 +507,7 @@ class CostTracker:
         cursor.execute("SELECT SUM(cost_usd) FROM usage_records")
         total_revenue = cursor.fetchone()[0] or 0.0
 
-        conn.close()
+        self._close_conn(conn)
 
         return {
             "total_records": total_records,
